@@ -1,257 +1,74 @@
-/**
- * Code written by and belongs to Juan Bernardo Tobar <jbtobar>
- * jbtobar.io@gmail.com
- * @author Juan Bernardo Tobar <jbtobar.io@gmail.com>
- */
-/* eslint no-param-reassign: off */
-/* eslint no-underscore-dangle: off */
-/* eslint @typescript-eslint/naming-convention: off */
 import { createSlice } from '@reduxjs/toolkit';
 // eslint-disable-next-line import/no-cycle
-import {
-  // AppThunk,
-  RootState,
-} from '../../store';
-import socket from '../../api';
+import { RootState } from '../../store';
+import routes from '../../constants/routes.json';
 
-const userSlice = createSlice({
-  name: 'user',
+const terminalSlice = createSlice({
+  name: 'terminal',
   initialState: {
-    profile: {},
-    sub: {},
-    pm: {},
-    status: '',
-    authStatus: '',
-    alerts: [],
+    tabs: [
+      {
+        name: 'home',
+        pathname: routes.TERMINAL,
+        data: [],
+      },
+    ],
+    activeTab: 0,
   },
   reducers: {
-    pushAlerts: (state, action) => {
-      const alerts = action.payload;
-      state.alerts = [...state.alerts, ...alerts];
-    },
-    setAlerts: (state, action) => {
-      const alerts = action.payload;
-      state.alerts = [...alerts];
-    },
-    storeReadyUser: (state, action) => {
-      const {
-        status = '',
-        profile = {},
-        sub = {},
-        pm = {},
-        authStatus = '',
-        alerts,
-      } = action.payload;
-      state.profile = profile;
-      state.sub = sub;
-      state.pm = pm;
-      state.authStatus = authStatus;
-      state.status = status;
-      if (alerts) {
-        state.alerts = [...state.alerts, alerts];
+    setRoute: (state, action) => {
+      const pathname = action.payload;
+      const arr = pathname.match(/\/terminal\/(.*)/);
+      if (arr != null || pathname === routes.TERMINAL) {
+        const copyTabs = [...state.tabs];
+        if (arr != null) {
+          const [p, name] = arr;
+          copyTabs[state.activeTab].name = name;
+        } else {
+          copyTabs[state.activeTab].name = 'home';
+        }
+        copyTabs[state.activeTab].pathname = pathname;
       }
     },
-    loadReadyAuthStatus: (state, action) => {
-      const {
-        status = '',
-        profile = {},
-        sub = {},
-        pm = {},
-        authStatus = '',
-        alerts,
-      } = action.payload;
-      state.profile = profile;
-      state.sub = sub;
-      state.pm = pm;
-      state.authStatus = authStatus;
-      state.status = status;
-      if (alerts) {
-        state.alerts = [...state.alerts, alerts];
+    storeData: (state, action) => {
+      const copyTabs = [...state.tabs];
+      copyTabs[state.activeTab].data = action.payload;
+    },
+    destroyTab: (state, action) => {
+      if (state.tabs.length > 1) {
+        const tabIndex = action.payload;
+        const copyTabs = [...state.tabs];
+        copyTabs.splice(tabIndex, 1);
+        if (tabIndex <= state.activeTab) {
+          state.activeTab -= 1;
+        }
+        state.tabs = copyTabs;
       }
+    },
+    setActiveTab: (state, action) => {
+      state.activeTab = action.payload;
+    },
+    newTab: (state) => {
+      const { activeTab } = state;
+      state.tabs = [...state.tabs, state.tabs[activeTab]];
+      state.activeTab = activeTab + 1;
+      // state.data = [];
     },
   },
 });
-
-const { loadReadyAuthStatus, storeReadyUser } = userSlice.actions;
-export const { pushAlerts, setAlerts } = userSlice.actions;
-export const selectAuthStatus = (state: RootState) => state.user.authStatus;
-export const selectUserId = (state: RootState) => state.user.profile._id;
-export const selectUser = (state: RootState) => state.user;
-export const selectUserSub = (state: RootState) => state.user.sub;
-export const selectAlerts = (state: RootState) => state.user.alerts;
-
-const authStatusFromData = (userData) => {
-  const { profile, status } = userData;
-  if (profile.email !== profile.emailConfirmed) return 'EMAIL_NOT_CONFIRMED';
-  if (status === 'active') return 'ACTIVE';
-  return 'NO_PLAN';
-};
-
-export const storeUser = (dispatch, res) => {
-  const state = {};
-  const { user, token, extraData } = res;
-  if (token) {
-    // console.log('TOKENARRRRYRYRYRYRY');
-    localStorage.setItem('@TOKEN', token);
-  }
-
-  // console.log('authy loaduser',user._id)
-  // socket.emit('join',user._id)
-  // socket.on('notification',(res) => {
-  //     console.log(res)
-  // })
-
-  const { sub, pm, status } = extraData;
-  state.profile = user;
-  state.sub = sub;
-  state.pm = pm;
-  state.status = status;
-  const authStatus = authStatusFromData({ profile: user, sub, pm, status });
-  state.authStatus = authStatus;
-  dispatch(storeReadyUser(state));
-};
-
-export const loadAuthStatus = (dispatch) => {
-  // const dispatch = useDispatch()
-  console.log('loadAuthStatus');
-
-  socket.on('authenticated', (res) => {
-    // socket.off('unauthorized');
-    // socket.off('authenticated');
-    socket.isAuth = true
-    res.authStatus = 'AUTH';
-    res.ok = true;
-
-    const { ok, message, user, extraData } = res;
-    const { sub, pm, status } = extraData;
-
-    console.log('authy hererrere', user._id);
-    if (!socket._callbacks.$notification) {
-      socket.on('notification', (res) => {
-        console.log(res);
-        dispatch(pushAlerts([res]));
-      });
-    }
-    socket.emit('join', user._id);
-    window.socket = socket
-    dispatch(
-      loadReadyAuthStatus({
-        profile: user,
-        sub,
-        pm,
-        status,
-        authStatus: authStatusFromData({
-          profile: user,
-          sub,
-          pm,
-          status,
-        }),
-      })
-    );
-  });
-  socket.on('unauthorized', (res) => {
-    console.log('unauthorized unauthorized', res);
-    dispatch(loadReadyAuthStatus({ authStatus: 'NO_AUTH' }));
-  });
-  socket.emit('authentication', {});
-
-  if (!socket._callbacks.$connect || socket._callbacks.$connect.length < 2) {
-    socket.on('connect',() => {
-      socket.emit('authentication', {});
-    })
-  }
-  window.socket = socket;
-
-  // connectSocket(token, null, (res) => {
-  //   const state = {};
-  //   if (token === null) {
-  //     state.authStatus = 'NO_AUTH';
-  //   } else {
-  //     const { ok, authStatus, message, user, extraData } = res;
-  //     // console.log({res})
-  //     if (ok) {
-  //       const { sub, pm, status } = extraData;
-  //       state.profile = user;
-  //       state.sub = sub;
-  //       state.pm = pm;
-  //       state.status = status;
-  //       state.authStatus = authStatusFromData({
-  //         profile: user,
-  //         sub,
-  //         pm,
-  //         status,
-  //       });
-  //     } else {
-  //       state.authStatus = authStatus;
-  //       state.alerts = [message];
-  //     }
-  //   }
-  //   dispatch(loadReadyAuthStatus(state));
-  // });
-};
-
-export const loadUserFromServer = (dispatch, payload, cb) => {
-  const { _id, reloadStripe } = payload;
-  socket.emit('find_me', { _id, reloadStripe }, (res) => {
-    if (res.ok) {
-      const { user, extraData } = res;
-      const { sub, pm, status } = extraData;
-      const authStatus = authStatusFromData({
-        profile: user,
-        sub,
-        pm,
-        status,
-      });
-      dispatch(
-        storeReadyUser({
-          profile: user,
-          sub,
-          pm,
-          authStatus,
-          status,
-        })
-      );
-    } else alert(res.message);
-
-    cb(res);
-  });
-};
-
-export default userSlice.reducer;
-
-/*
-loadUserFromStorage: (state) => {
-  const serializedUser = localStorage.getItem('@USERDATA');
-  if (serializedState !== null) {
-    const { status, profile, sub, pm } = JSON.parse(serializedUser);
-    state = {
-      status,
-      profile,
-      sub,
-      pm,
-    };
-  }
-},
-setAuthStatus: (state, action) => {
-  state.authStatus = action.payload;
-},
-storeUser: (state, action) => {
-  const { profile = {}, pm = {}, sub = {}, status = '' } = action.payload;
-  state.profile = profile;
-  state.sub = sub;
-  state.status = status;
-  state.pm = pm;
-  localStorage.setItem(
-    '@USERDATA',
-    JSON.stringify({
-      status,
-      profile,
-      sub,
-      pm,
-    })
-  );
-},
-*/
-
-// export const selectUser = (state: RootState) => state.user;
-// export const selectUserStatus = (state: RootState) => state.user.status;
+//
+export const {
+  storeData,
+  newTab,
+  destroyTab,
+  setRoute,
+  setActiveTab,
+} = terminalSlice.actions;
+//
+export default terminalSlice.reducer;
+//
+export const selectData = (state: RootState) =>
+  state.terminal.tabs[state.terminal.activeTab].data;
+export const activeTab = (state: RootState) => state.terminal.activeTab;
+export const displayTabs = (state: RootState) =>
+  state.terminal.tabs.map((d) => ({ name: d.name, pathname: d.pathname }));
